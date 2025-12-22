@@ -62,7 +62,7 @@ export const OnboardingFlow: React.FC = () => {
           description: 'Help us understand your context',
           component: (
             <div className="space-y-3">
-              {BUSINESS_TYPE_OPTIONS.map((option) => (
+              {BUSINESS_TYPE_OPTIONS.map((option: typeof BUSINESS_TYPE_OPTIONS[0]) => (
                 <button
                   key={option.value}
                   onClick={() => updateOnboarding({ businessType: option.value as OnboardingData['businessType'] })}
@@ -86,7 +86,7 @@ export const OnboardingFlow: React.FC = () => {
           description: 'Select what best describes your customer base',
           component: (
             <div className="space-y-3">
-              {TARGET_AUDIENCE_OPTIONS.map((option) => (
+              {TARGET_AUDIENCE_OPTIONS.map((option: typeof TARGET_AUDIENCE_OPTIONS[0]) => (
                 <button
                   key={option.value}
                   onClick={() => updateOnboarding({ targetAudience: option.value as OnboardingData['targetAudience'] })}
@@ -110,7 +110,7 @@ export const OnboardingFlow: React.FC = () => {
           description: 'Select all that apply',
           component: (
             <div className="space-y-2">
-              {BRAND_STYLE_OPTIONS.map((option) => {
+              {BRAND_STYLE_OPTIONS.map((option: typeof BRAND_STYLE_OPTIONS[0]) => {
                 const value = option.value as 'professional' | 'friendly' | 'casual' | 'energetic' | 'premium'
                 return (
                 <button
@@ -167,7 +167,7 @@ export const OnboardingFlow: React.FC = () => {
           description: 'This affects how detailed AI-generated content will be',
           component: (
             <div className="space-y-3">
-              {RESPONSE_PREFERENCE_OPTIONS.map((option) => (
+              {RESPONSE_PREFERENCE_OPTIONS.map((option: typeof RESPONSE_PREFERENCE_OPTIONS[0]) => (
                 <button
                   key={option.value}
                   onClick={() => updateOnboarding({ responsePreference: option.value as OnboardingData['responsePreference'] })}
