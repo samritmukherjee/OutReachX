@@ -21,6 +21,7 @@ interface LoadedCampaign {
   contactCount: number
   status: string
   csvStoragePath?: string
+  aiDescription?: string
   previewText?: string
   transcript?: string
   contactsFile?: { url: string; publicId: string }
@@ -273,7 +274,19 @@ export default function PreviewPageImpl({ campaignId: propCampaignId, fromCreati
                 className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/20 text-white focus:border-white/50 outline-none transition resize-none h-20"
               />
             ) : (
-              <p className="text-white/80 text-sm">{loadedCampaign.description}</p>
+              <div className="space-y-2">
+                <p className="text-white/80 text-sm whitespace-pre-wrap">
+                  {loadedCampaign.aiDescription || loadedCampaign.previewText || loadedCampaign.description || 'No description'}
+                </p>
+                {loadedCampaign.aiDescription && loadedCampaign.description && (
+                  <details className="text-xs text-white/40">
+                    <summary className="cursor-pointer hover:text-white/60 transition">Show original description</summary>
+                    <p className="mt-2 whitespace-pre-wrap text-white/50 border-l border-white/10 pl-2">
+                      {loadedCampaign.description}
+                    </p>
+                  </details>
+                )}
+              </div>
             )}
           </div>
           <div>
@@ -437,11 +450,51 @@ export default function PreviewPageImpl({ campaignId: propCampaignId, fromCreati
           {!isEditing && (
             <>
               <button
+                onClick={async () => {
+                  setIsRegenerating(true)
+                  try {
+                    const res = await fetch(`/api/campaigns/${campaignId}/description`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        wordLimit: loadedCampaign.channels.text?.wordLimit || 200,
+                        tone: loadedCampaign.toneOfVoice || 'professional and friendly',
+                        emotion: 'trust and excitement',
+                      }),
+                    })
+                    if (res.ok) {
+                      const data = await res.json()
+                      console.log('✅ AI description generated:', data.aiDescription)
+                      // Reload campaign to show updated description
+                      const campaignRes = await fetch(`/api/campaigns/${campaignId}`)
+                      const campaignData = await campaignRes.json()
+                      setLoadedCampaign(campaignData.campaign)
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: campaignData.campaign.aiDescription || campaignData.campaign.description,
+                      }))
+                      setError('')
+                    } else {
+                      setError('Failed to enhance description')
+                    }
+                  } catch (err) {
+                    console.error('Error:', err)
+                    setError('Failed to enhance description')
+                  } finally {
+                    setIsRegenerating(false)
+                  }
+                }}
+                disabled={isRegenerating}
+                className="px-6 py-2.5 rounded-lg bg-purple-600/30 border border-purple-500/30 hover:bg-purple-600/50 text-purple-200 font-medium transition disabled:opacity-50 cursor-pointer"
+              >
+                {isRegenerating ? '🤖 Enhancing...' : '🤖 Enhance with AI'}
+              </button>
+              <button
                 onClick={generatePreview}
                 disabled={isRegenerating}
                 className="px-6 py-2.5 rounded-lg bg-white/10 border border-white/20 hover:bg-white/20 text-white font-medium transition disabled:opacity-50 cursor-pointer"
               >
-                {isRegenerating ? '⟳ Regenerating...' : 'Regenerate'}
+                {isRegenerating ? '⟳ Regenerating...' : '⟳ Regenerate'}
               </button>
               <button
                 onClick={() => setIsEditing(true)}

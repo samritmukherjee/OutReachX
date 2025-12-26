@@ -22,7 +22,9 @@ interface LoadedCampaign {
   contactCount: number
   status: string
   csvStoragePath?: string
+  aiDescription?: string
   previewText?: string
+  transcript?: string
   contactsFile?: { url: string; publicId: string }
 }
 
@@ -59,6 +61,11 @@ export default function CampaignDetailPage() {
 
         if (response.ok) {
           setLoadedCampaign(data.campaign)
+          console.log('📊 Campaign loaded:', {
+            description: data.campaign.description?.substring?.(0, 50),
+            aiDescription: data.campaign.aiDescription?.substring?.(0, 50),
+            previewText: data.campaign.previewText?.substring?.(0, 50),
+          })
           setDraft({
             title: data.campaign.title,
             description: data.campaign.description,
@@ -213,11 +220,23 @@ export default function CampaignDetailPage() {
             <h1 className="text-4xl font-bold text-white">{loadedCampaign.title}</h1>
           </div>
 
-          {/* Description */}
+          {/* Original Description */}
           <div>
-            <p className="text-xs text-white/50 mb-2">Description</p>
-            <p className="text-white/80 text-base leading-relaxed">{loadedCampaign.description}</p>
+            <p className="text-xs text-white/50 mb-2">Original Description</p>
+            <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">
+              {loadedCampaign.description || 'No description provided'}
+            </p>
           </div>
+
+          {/* AI Description */}
+          {loadedCampaign.aiDescription && (
+            <div>
+              <p className="text-xs text-white/50 mb-2">AI-Enhanced Description</p>
+              <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">
+                {loadedCampaign.aiDescription}
+              </p>
+            </div>
+          )}
 
           {/* Channel Details */}
           <div>
@@ -245,12 +264,12 @@ export default function CampaignDetailPage() {
           </div>
 
           {/* Preview Text */}
-          {loadedCampaign.previewText && (
+          {/* {loadedCampaign.previewText && (
             <div>
               <p className="text-xs text-white/50 mb-2">Preview Text</p>
               <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">{loadedCampaign.previewText}</p>
             </div>
-          )}
+          )} */}
 
           {/* Assets */}
           <div>

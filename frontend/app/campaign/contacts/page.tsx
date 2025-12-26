@@ -1,12 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useCampaign } from '../CampaignContext'
 
 interface Contact {
   name: string
   phone: string
+}
+
+interface ContactsSummary {
+  count: number
+  items: Contact[]
 }
 
 export default function ContactsPage() {
@@ -16,7 +21,12 @@ export default function ContactsPage() {
   const [dragActive, setDragActive] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isExtracting, setIsExtracting] = useState(false)
   const [contactsFile, setContactsFile] = useState<File | null>(null)
+  const [campaignId, setCampaignId] = useState<string | null>(null)
+  const [contactsSummary, setContactsSummary] = useState<ContactsSummary | null>(null)
+  const [showContacts, setShowContacts] = useState(false)
+  const [loadingContactsSummary, setLoadingContactsSummary] = useState(false)
 
   const parseCSV = (text: string): Contact[] => {
     const lines = text.trim().split('\n')
@@ -52,7 +62,7 @@ export default function ContactsPage() {
     setDragActive(e.type === 'dragenter' || e.type === 'dragover')
   }
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
@@ -61,135 +71,183 @@ export default function ContactsPage() {
       file.type === 'text/csv' || file.name.endsWith('.csv') || file.name.endsWith('.xlsx')
     )
 
-    if (files.length > 0) {
-      const file = files[0]
-      setContactsFile(file)
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        try {
-          const text = event.target?.result as string
-          const parsed = parseCSV(text)
-          if (parsed.length > 0) {
-            setContacts(parsed)
-            setError('')
-          } else {
-            setError('No valid contacts found')
-          }
-        } catch (err) {
-          setError('Failed to parse file')
+    if (files.length === 0) {
+      setError('Please drop a CSV or Excel file')
+      return
+    }
+
+    const file = files[0]
+    setContactsFile(file)
+    setContactsSummary(null)
+    setError('')
+    setIsExtracting(true)
+
+    try {
+      let cid = campaignId
+
+      // Create campaign if it doesn't exist yet
+      if (!cid) {
+        console.log('📝 Creating campaign first...')
+        const createRes = await fetch('/api/campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: campaign.title,
+            description: campaign.description,
+            channels: campaign.channels,
+            toneOfVoice: campaign.toneOfVoice,
+          }),
+        })
+
+        if (!createRes.ok) {
+          throw new Error('Failed to create campaign')
         }
+
+        const { id: newCampaignId } = await createRes.json()
+        cid = newCampaignId
+        setCampaignId(newCampaignId)
+        updateCampaign({ campaignId: newCampaignId })
+        console.log('✅ Campaign created:', newCampaignId)
       }
-      reader.readAsText(file)
+
+      // 1) Upload file via /files route
+      console.log('📤 Uploading contacts file:', file.name)
+      const formData = new FormData()
+      formData.append('contactsFile', file)
+
+      const uploadRes = await fetch(`/api/campaigns/${cid}/files`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!uploadRes.ok) {
+        throw new Error('Failed to upload contacts file')
+      }
+
+      console.log('✅ File uploaded')
+
+      // 2) Trigger extraction
+      console.log('📞 Extracting contacts...')
+      const extractRes = await fetch(`/api/campaigns/${cid}/contacts`, {
+        method: 'POST',
+      })
+
+      if (!extractRes.ok) {
+        throw new Error('Failed to extract contacts')
+      }
+
+      console.log('✅ Contacts extracted')
+
+      // 3) Fetch updated campaign to get contactsSummary
+      console.log('🔄 Fetching updated campaign...')
+      const campaignRes = await fetch(`/api/campaigns/${cid}`)
+      if (campaignRes.ok) {
+        const campaignData = await campaignRes.json()
+        setContactsSummary(campaignData.campaign.contactsSummary || null)
+        console.log('✅ Summary loaded:', campaignData.campaign.contactsSummary?.count, 'contacts')
+      }
+    } catch (err) {
+      console.error('Error extracting contacts:', err)
+      setError(err instanceof Error ? err.message : 'Failed to process contacts file')
+    } finally {
+      setIsExtracting(false)
     }
   }
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setContactsFile(file)
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        try {
-          const text = event.target?.result as string
-          const parsed = parseCSV(text)
-          if (parsed.length > 0) {
-            setContacts(parsed)
-            setError('')
-          } else {
-            setError('No valid contacts found in CSV')
-          }
-        } catch (err) {
-          setError('Failed to parse CSV file')
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setContactsFile(file)
+    setContactsSummary(null)
+    setError('')
+    setIsExtracting(true)
+
+    try {
+      let cid = campaignId
+
+      // Create campaign if it doesn't exist yet
+      if (!cid) {
+        console.log('📝 Creating campaign first...')
+        const createRes = await fetch('/api/campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: campaign.title,
+            description: campaign.description,
+            channels: campaign.channels,
+            toneOfVoice: campaign.toneOfVoice,
+          }),
+        })
+
+        if (!createRes.ok) {
+          throw new Error('Failed to create campaign')
         }
+
+        const { id: newCampaignId } = await createRes.json()
+        cid = newCampaignId
+        setCampaignId(newCampaignId)
+        updateCampaign({ campaignId: newCampaignId })
+        console.log('✅ Campaign created:', newCampaignId)
       }
-      reader.readAsText(file)
+
+      // 1) Upload file via /files route
+      console.log('📤 Uploading contacts file:', file.name)
+      const formData = new FormData()
+      formData.append('contactsFile', file)
+
+      const uploadRes = await fetch(`/api/campaigns/${cid}/files`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!uploadRes.ok) {
+        throw new Error('Failed to upload contacts file')
+      }
+
+      console.log('✅ File uploaded')
+
+      // 2) Trigger extraction
+      console.log('📞 Extracting contacts...')
+      const extractRes = await fetch(`/api/campaigns/${cid}/contacts`, {
+        method: 'POST',
+      })
+
+      if (!extractRes.ok) {
+        throw new Error('Failed to extract contacts')
+      }
+
+      console.log('✅ Contacts extracted')
+
+      // 3) Fetch updated campaign to get contactsSummary
+      console.log('🔄 Fetching updated campaign...')
+      const campaignRes = await fetch(`/api/campaigns/${cid}`)
+      if (campaignRes.ok) {
+        const campaignData = await campaignRes.json()
+        setContactsSummary(campaignData.campaign.contactsSummary || null)
+        console.log('✅ Summary loaded:', campaignData.campaign.contactsSummary?.count, 'contacts')
+      }
+    } catch (err) {
+      console.error('Error extracting contacts:', err)
+      setError(err instanceof Error ? err.message : 'Failed to process contacts file')
+    } finally {
+      setIsExtracting(false)
     }
   }
 
   const handleContinue = async () => {
-    if (contacts.length === 0) {
-      setError('Please upload contacts')
+    if (!campaignId) {
+      setError('Campaign ID not found')
       return
     }
 
-    setIsLoading(true)
-    setError('')
-
-    try {
-      // Step 1: Create campaign with text only
-      console.log('📝 Step 1: Creating campaign with text data...')
-      
-      const createRes = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: campaign.title,
-          description: campaign.description,
-          channels: campaign.channels,
-          toneOfVoice: campaign.toneOfVoice,
-        }),
-      })
-
-      if (!createRes.ok) {
-        const createError = await createRes.json()
-        setError(createError.error || 'Failed to create campaign')
-        setIsLoading(false)
-        return
-      }
-
-      const { id: campaignId } = await createRes.json()
-      console.log('✅ Campaign created:', campaignId)
-
-      // Step 2: Upload files to Cloudinary and patch campaign
-      console.log('📤 Step 2: Uploading files...')
-      
-      const fileFormData = new FormData()
-      
-      // Add all assets
-      campaign.assets.forEach((file) => {
-        fileFormData.append('assets', file)
-      })
-
-      // Add contacts file
-      if (contactsFile) {
-        fileFormData.append('contactsFile', contactsFile)
-      } else {
-        // Create CSV from contacts array
-        const csvHeaders = 'name,phone\n'
-        const csvRows = contacts.map((c) => `${c.name},${c.phone}`).join('\n')
-        const csvContent = csvHeaders + csvRows
-        const csvBlob = new Blob([csvContent], { type: 'text/csv' })
-        const csvFile = new File([csvBlob], 'contacts.csv', { type: 'text/csv' })
-        fileFormData.append('contactsFile', csvFile)
-      }
-
-      const uploadRes = await fetch(`/api/campaigns/${campaignId}/files`, {
-        method: 'POST',
-        body: fileFormData,
-      })
-
-      if (!uploadRes.ok) {
-        const uploadError = await uploadRes.json()
-        setError(uploadError.error || 'Failed to upload files')
-        setIsLoading(false)
-        return
-      }
-
-      console.log('✅ Files uploaded successfully')
-
-      // Update context with campaignId and navigate
-      updateCampaign({
-        contacts,
-        contactsFile,
-        campaignId,
-      })
-
-      router.push('/campaign/preview')
-    } catch (err) {
-      console.error('Error saving campaign:', err)
-      setError('Failed to save campaign')
-      setIsLoading(false)
+    if (!contactsSummary || contactsSummary.count === 0) {
+      setError('Please upload and extract contacts first')
+      return
     }
+
+    // Just navigate to preview - extraction already happened
+    router.push(`/campaign/preview?campaignId=${campaignId}`)
   }
 
   return (
@@ -229,16 +287,58 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Contacts summary */}
-      {contacts.length > 0 && (
-        <div>
-          <div className="bg-black/40 border border-white/10 rounded-xl p-4">
-            <p className="text-sm font-semibold text-white">
-              ✓ {contacts.length} contact{contacts.length !== 1 ? 's' : ''} detected
-            </p>
-          </div>
+      {/* Show filename when selected */}
+      {contactsFile && (
+        <div className="px-4 py-2.5 rounded-lg bg-blue-900/40 border border-blue-500/40 text-blue-200 text-sm">
+          ✓ Selected: <span className="font-medium">{contactsFile.name}</span>
         </div>
       )}
+
+      {/* Contacts summary */}
+      <div className="space-y-3">
+        {contactsSummary && contactsSummary.count > 0 ? (
+          <>
+            <button
+              onClick={() => setShowContacts((v) => !v)}
+              className="w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800/60 hover:bg-slate-700/60 text-slate-200 border border-slate-700 transition cursor-pointer"
+            >
+              {showContacts
+                ? `Hide contacts (${contactsSummary.count} detected)`
+                : `Show contacts (${contactsSummary.count} detected)`}
+            </button>
+
+            {showContacts && (
+              <div className="border border-slate-700 rounded-lg p-3 bg-black/40 max-h-64 overflow-y-auto">
+                <ul className="space-y-2">
+                  {contactsSummary.items.map((c, idx) => (
+                    <li
+                      key={`${c.name}-${c.phone}-${idx}`}
+                      className="flex justify-between gap-3 px-2 py-1.5 text-xs bg-black/30 rounded hover:bg-black/50 transition"
+                    >
+                      <span className="text-white/80">{c.name}</span>
+                      <span className="text-white/50 font-mono">{c.phone}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : isExtracting ? (
+          <div className="px-4 py-2.5 rounded-lg text-sm text-slate-400 bg-black/40 border border-slate-700">
+            <span className="inline-block animate-spin mr-2">⟳</span>
+            Extracting contacts from file...
+          </div>
+        ) : loadingContactsSummary ? (
+          <div className="px-4 py-2.5 rounded-lg text-sm text-slate-400 bg-black/40 border border-slate-700">
+            <span className="inline-block animate-spin mr-2">⟳</span>
+            Loading contacts...
+          </div>
+        ) : (
+          <div className="px-4 py-2.5 rounded-lg text-sm text-slate-500 bg-black/40 border border-slate-700">
+            Attach a CSV or Excel file to detect contacts
+          </div>
+        )}
+      </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -246,16 +346,16 @@ export default function ContactsPage() {
         <button
           onClick={() => router.push('/campaign/assets')}
           className="px-6 py-2.5 rounded-lg bg-black/40 border border-white/20 hover:bg-black/50 text-white font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={isLoading}
+          disabled={isExtracting}
         >
           Back
         </button>
         <button
           onClick={handleContinue}
           className="px-6 py-2.5 rounded-lg bg-white hover:bg-white/95 text-black font-semibold transition shadow-[0_4px_12px_rgba(255,255,255,0.2)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={isLoading}
+          disabled={isExtracting || !contactsSummary || contactsSummary.count === 0}
         >
-          {isLoading ? 'Previewing...' : 'Continue'}
+          {isExtracting ? '⟳ Extracting contacts...' : 'Continue to preview'}
         </button>
       </div>
     </div>

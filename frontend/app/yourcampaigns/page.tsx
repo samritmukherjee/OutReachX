@@ -8,6 +8,7 @@ interface Campaign {
   id: string
   title: string
   description: string
+  aiDescription?: string
   channels: Record<string, any>
   createdAt: any
   updatedAt: any
@@ -152,7 +153,7 @@ export default function YourCampaignsPage() {
 
                 {/* Description Preview */}
                 <p className="text-white/60 text-sm line-clamp-2 mb-4">
-                  {campaign.description || 'No description yet'}
+                  {campaign.aiDescription || campaign.description || 'No description yet'}
                 </p>
 
                 {/* Channels */}
